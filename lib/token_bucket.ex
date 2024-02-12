@@ -52,11 +52,13 @@ defmodule PlugLimit.TokenBucket do
     limit = Keyword.fetch!(opts, :limit)
     ttl = Keyword.fetch!(opts, :ttl)
     key = Keyword.fetch!(opts, :key)
+    before_eval = Keyword.get(opts, :before_eval)
 
     PlugLimit.init(
       limiter: :token_bucket,
       opts: [limit, ttl, burst],
-      key: key
+      key: key,
+      before_eval: before_eval
     )
   end
 

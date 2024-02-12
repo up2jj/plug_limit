@@ -321,7 +321,8 @@ defmodule PlugLimit do
     :opts,
     :response,
     :script,
-    :script_id
+    :script_id,
+    :before_eval
   ]
 
   @type t() :: %__MODULE__{
@@ -356,6 +357,8 @@ defmodule PlugLimit do
 
   @type eval_result :: {:ok, list()} | {:error, any()} | any()
 
+  @type before_eval :: (conn :: Plug.Conn.t(), conf :: Plug.opts() -> false | eval_result() | t())
+
   @impl true
   @doc false
   @spec init(opts :: Plug.opts()) :: PlugLimit.t()
@@ -385,6 +388,8 @@ defmodule PlugLimit do
       Map.get(limiter, :response) ||
         Application.get_env(:plug_limit, :response, @default_response)
 
+    before_eval = Keyword.get(opts, :before_eval)
+
     opts = %{
       cmd: cmd,
       headers: headers,
@@ -393,7 +398,8 @@ defmodule PlugLimit do
       opts: l_opts,
       response: response,
       script: script,
-      script_id: script_id
+      script_id: script_id,
+      before_eval: before_eval
     }
 
     struct!(__MODULE__, opts)
@@ -468,6 +474,23 @@ defmodule PlugLimit do
   @doc false
   def get_script(:fixed_window), do: @default_script_fixed_window
   def get_script(:token_bucket), do: @default_script_token_bucket
+
+  defp eval_limit(conn, %__MODULE__{before_eval: before_eval} = conf)
+       when is_function(before_eval, 2) do
+    case before_eval.(conn, conf) do
+      false ->
+        # disable completely
+        {:ok, []}
+
+      result when is_tuple(result) ->
+        # return eval result directly
+        result
+
+      # re-evaluate with new configuration
+      %__MODULE__{} = new_conf ->
+        conf |> Map.merge(new_conf) |> Map.delete(:before_eval) |> then(&eval_limit(conn, &1))
+    end
+  end
 
   @spec eval_limit(Plug.Conn.t(), PlugLimit.t()) :: eval_result()
   defp eval_limit(conn, %__MODULE__{opts: lua_opts} = conf) do
